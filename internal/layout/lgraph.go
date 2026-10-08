@@ -1,6 +1,7 @@
 package layout
 
 import (
+	"math"
 	"sort"
 
 	"github.com/zkrebbekx/go-mermaid/internal/domain"
@@ -16,6 +17,13 @@ type lnode struct {
 	cross float64 // coordinate along the cross axis (set by positioning)
 	pc    float64 // center along the primary/rank axis (set by positioning)
 	w, h  float64 // domain box size (0 for dummies)
+
+	// label is the edge whose label this dummy holds; its w, h are the label
+	// box, so positioning reserves room for the text like any other node.
+	label *domain.Edge
+	// loop is the label box of a self-loop on this node, zero if it has none.
+	// Positioning keeps room for the loop and its label beside the node.
+	loop domain.Size
 }
 
 // lgraph is the layered working graph: nodes bucketed by rank, with up/down
@@ -33,7 +41,11 @@ type lgraph struct {
 
 // buildLGraph buckets nodes by rank and inserts dummies along edges that span
 // multiple ranks. Self-edges keep a two-element chain and are routed specially.
-func buildLGraph(g *domain.Graph, ranks map[string]int) *lgraph {
+//
+// A labelled edge's middle dummy takes the size of its label, so ranking gaps
+// and cross spacing make room for the text. Compute doubles the ranks of any
+// graph with a labelled edge, so every such edge has a middle rank.
+func buildLGraph(g *domain.Graph, ranks map[string]int, opts Options) *lgraph {
 	maxRank := 0
 	for _, r := range ranks {
 		if r > maxRank {
@@ -76,6 +88,11 @@ func buildLGraph(g *domain.Graph, ranks map[string]int) *lgraph {
 		if from == nil || to == nil {
 			continue
 		}
+		if e.From == e.To && e.Label != "" {
+			sz := labelSize(e.Label, opts.face(), opts.FontSize)
+			from.loop.W = math.Max(from.loop.W, sz.W)
+			from.loop.H = math.Max(from.loop.H, sz.H)
+		}
 		chain := []*lnode{from}
 		if to.rank > from.rank+1 {
 			prev := from
@@ -85,8 +102,16 @@ func buildLGraph(g *domain.Graph, ranks map[string]int) *lgraph {
 			if c := nodeCluster[e.From]; c != "" && c == nodeCluster[e.To] {
 				dummyCluster = c
 			}
+			mid := -1
+			if e.Label != "" {
+				mid = from.rank + (to.rank-from.rank)/2
+			}
 			for r := from.rank + 1; r < to.rank; r++ {
 				d := &lnode{rank: r, w: 1}
+				if r == mid {
+					sz := labelSize(e.Label, opts.face(), opts.FontSize)
+					d.w, d.h, d.label = sz.W, sz.H, e
+				}
 				if dummyCluster != "" {
 					lg.cluster[d] = dummyCluster
 				}
