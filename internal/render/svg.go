@@ -153,17 +153,7 @@ func writeEdge(b *strings.Builder, e *domain.Edge, pal theme.Palette, curved boo
 		// multi-line label grows upward.
 		midX, midY := e.LabelPos.X, e.LabelPos.Y
 		lines := svgutil.SplitLines(e.Label)
-		tw := 0.0
-		for _, ln := range lines {
-			if lw := face.Width(ln, fontSize); lw > tw {
-				tw = lw
-			}
-		}
-		tw += 6
-		th := fontSize * float64(len(lines))
-		fmt.Fprintf(b, `    <rect x="%s" y="%s" width="%s" height="%s" fill="%s"/>`,
-			num(midX-tw/2), num(midY-th), num(tw), num(th+4), pal.Background)
-		b.WriteByte('\n')
+		svgutil.LabelBackground(b, e.Label, midX, midY, face, fontSize, pal.Background)
 		for i, ln := range lines {
 			y := midY - fontSize*float64(len(lines)-1-i)
 			fmt.Fprintf(b, `    <text x="%s" y="%s" fill="%s" text-anchor="middle" dy="-2">%s</text>`,

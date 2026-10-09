@@ -18,10 +18,12 @@ func positionLG(lg *lgraph, dir domain.Direction, opts Options) float64 {
 			if s := primarySize(ln, vertical); s > band {
 				band = s
 			}
-			// In LR the loop label sits below the node, centred on it, and
-			// may be wider than the node itself.
-			if !vertical && ln.loop.W > band {
-				band = ln.loop.W
+			// The loop label column can be taller (TD) or wider (LR) than
+			// the node itself.
+			if vertical {
+				band = max(band, ln.loop.H)
+			} else {
+				band = max(band, ln.loop.W)
 			}
 		}
 		for _, ln := range layer {
@@ -58,7 +60,7 @@ func positionLG(lg *lgraph, dir domain.Direction, opts Options) float64 {
 }
 
 // alignRank pulls each node toward the average cross of its neighbors, then
-// resolves overlaps left to right while preserving the rank's order.
+// resolves overlaps while preserving the rank's order.
 func alignRank(layer []*lnode, adj map[*lnode][]*lnode, vertical bool, opts Options) {
 	for _, ln := range layer {
 		ns := adj[ln]
@@ -71,12 +73,25 @@ func alignRank(layer []*lnode, adj map[*lnode][]*lnode, vertical bool, opts Opti
 		}
 		ln.cross = sum / float64(len(ns))
 	}
+	// Resolve overlaps both ways and average. A one-way push leaves a crowded
+	// group lopsided: two dummies that want the same spot end up right of it,
+	// and the node they share follows them out of line.
+	sep := func(i int) float64 {
+		return crossAfter(layer[i-1], vertical) + opts.NodeSep + crossSize(layer[i], vertical)/2
+	}
+	fwd := make([]float64, len(layer))
+	bwd := make([]float64, len(layer))
+	for i, ln := range layer {
+		fwd[i], bwd[i] = ln.cross, ln.cross
+	}
 	for i := 1; i < len(layer); i++ {
-		prev, cur := layer[i-1], layer[i]
-		minC := prev.cross + crossAfter(prev, vertical) + opts.NodeSep + crossSize(cur, vertical)/2
-		if cur.cross < minC {
-			cur.cross = minC
-		}
+		fwd[i] = max(fwd[i], fwd[i-1]+sep(i))
+	}
+	for i := len(layer) - 2; i >= 0; i-- {
+		bwd[i] = min(bwd[i], bwd[i+1]-sep(i+1))
+	}
+	for i, ln := range layer {
+		ln.cross = (fwd[i] + bwd[i]) / 2
 	}
 }
 
@@ -110,11 +125,15 @@ func crossSize(ln *lnode, vertical bool) float64 {
 }
 
 // crossAfter is the room a node needs past its cross center: half its box,
-// plus the loop and label of a labelled self-loop, which sit on that side.
+// plus its self-loops and their labels, which sit on that side. A lone
+// unlabelled loop fits in NodeSep and reserves nothing.
 func crossAfter(ln *lnode, vertical bool) float64 {
 	after := crossSize(ln, vertical) / 2
+	if ln.loops > 1 || ln.loop.W > 0 {
+		after += loopReach(ln.loops)
+	}
 	if ln.loop.W > 0 {
-		after += loopOut + labelGap
+		after += labelGap
 		if vertical {
 			after += ln.loop.W
 		} else {

@@ -74,6 +74,7 @@ func Compute(g *domain.Graph, opts Options) (*Result, error) {
 	}
 	separateParallel(g, parallel)
 	spreadPorts(g, vertical, parallel, anchored, opts)
+	dropRepeats(g)
 	placeLabels(g, anchored, vertical, opts)
 	normalizeOrigin(g, opts)
 
@@ -209,33 +210,73 @@ const labelGap = 4.0
 // placeLabels sets LabelPos on every edge. LabelPos is the baseline of the
 // label's last line (see labelRect). An edge routed through a label dummy
 // already holds that dummy's centre, which positioning kept clear of other
-// nodes and labels. A self-loop's label sits just outside the loop. Any other
-// edge anchors its label at the midpoint of its path.
+// nodes and labels. Self-loop labels stack in a column just outside the
+// outermost loop on their node. Any other edge anchors its label at the
+// midpoint of its path.
 func placeLabels(g *domain.Graph, anchored map[*domain.Edge]bool, vertical bool, opts Options) {
+	baseline := func(c domain.Point, sz domain.Size) domain.Point {
+		return domain.Point{X: c.X, Y: c.Y + sz.H/2 - 4}
+	}
+	type column struct {
+		outer  float64 // far side of the outermost loop on the cross axis
+		height float64 // total height of the stacked labels
+		edges  []*domain.Edge
+	}
+	cols := map[string]*column{}
+	var order []string
 	for _, e := range g.Edges {
-		if e.Label == "" || len(e.Points) == 0 {
-			e.LabelPos = domain.PolylineMidpoint(e.Points)
-			continue
-		}
-		sz := labelSize(e.Label, opts.face(), opts.FontSize)
-		var c domain.Point
 		switch {
+		case e.Label == "" || len(e.Points) == 0:
+			e.LabelPos = domain.PolylineMidpoint(e.Points)
 		case anchored[e]:
-			c = e.LabelPos
+			e.LabelPos = baseline(e.LabelPos, labelSize(e.Label, opts.face(), opts.FontSize))
 		case e.From == e.To && len(e.Points) == 4:
-			// Points[1]..Points[2] is the loop's outer side.
-			a, b := e.Points[1], e.Points[2]
-			c = domain.Point{X: (a.X + b.X) / 2, Y: (a.Y + b.Y) / 2}
-			if vertical {
-				c.X += labelGap + sz.W/2
-			} else {
-				c.Y += labelGap + sz.H/2
+			col, ok := cols[e.From]
+			if !ok {
+				col = &column{outer: math.Inf(-1)}
+				cols[e.From] = col
+				order = append(order, e.From)
 			}
+			col.edges = append(col.edges, e)
+			col.height += labelSize(e.Label, opts.face(), opts.FontSize).H
 		default:
 			e.LabelPos = domain.PolylineMidpoint(e.Points)
+		}
+	}
+	if len(cols) == 0 {
+		return
+	}
+	// Unlabelled loops nest too, so the outermost may carry no label.
+	for _, e := range g.Edges {
+		if col := cols[e.From]; col != nil && e.From == e.To && len(e.Points) == 4 {
+			if vertical {
+				col.outer = math.Max(col.outer, e.Points[1].X)
+			} else {
+				col.outer = math.Max(col.outer, e.Points[1].Y)
+			}
+		}
+	}
+	for _, id := range order {
+		col, n := cols[id], g.NodeByID(id)
+		if n == nil {
 			continue
 		}
-		e.LabelPos = domain.Point{X: c.X, Y: c.Y + sz.H/2 - 4}
+		nc := n.Center()
+		// Labels run down from the top of the column, which is centred on
+		// the node in TD and starts just below the loops in LR.
+		at := nc.Y - col.height/2
+		if !vertical {
+			at = col.outer + labelGap
+		}
+		for _, e := range col.edges {
+			sz := labelSize(e.Label, opts.face(), opts.FontSize)
+			c := domain.Point{X: nc.X, Y: at + sz.H/2}
+			if vertical {
+				c.X = col.outer + labelGap + sz.W/2
+			}
+			e.LabelPos = baseline(c, sz)
+			at += sz.H
+		}
 	}
 }
 
@@ -386,6 +427,13 @@ func shiftPort(e *domain.Edge, last bool, port float64, vertical bool, inset flo
 		}
 		return p.X
 	}
+	cur := pts[0].Y
+	if vertical {
+		cur = pts[0].X
+	}
+	if cur == port {
+		return
+	}
 	set := func(p *domain.Point, v float64) {
 		if vertical {
 			p.X = v
@@ -422,6 +470,14 @@ func shiftPort(e *domain.Edge, last bool, port float64, vertical bool, inset flo
 		slices.Reverse(pts)
 	}
 	e.Points = pts
+}
+
+// dropRepeats removes consecutive duplicate points from every edge. Moving a
+// port onto the next bend can leave a zero-length segment behind.
+func dropRepeats(g *domain.Graph) {
+	for _, e := range g.Edges {
+		e.Points = slices.Compact(e.Points)
+	}
 }
 
 // sizeNodes estimates a box size for each node from its label and font size.
@@ -504,7 +560,7 @@ func routeEdges(lg *lgraph, g *domain.Graph, totalPrimary float64) map[*domain.E
 			continue
 		}
 		if e.From == e.To {
-			e.Points = selfLoop(chain[0], vertical, g.Direction, totalPrimary)
+			e.Points = selfLoop(chain[0], lg.loopIdx[e], vertical, g.Direction, totalPrimary)
 			continue
 		}
 		pts := make([]domain.Point, len(chain))
@@ -583,30 +639,44 @@ func gapMid(ca, ha, cb, hb float64) float64 {
 	return (lo + hi) / 2
 }
 
-// loopOut is how far a self-loop reaches out from its node.
-const loopOut = 24.0
+// loopOut is how far a self-loop reaches out from its node; each further
+// loop on the same node nests loopStep beyond the previous one.
+const (
+	loopOut  = 24.0
+	loopStep = 10.0
+)
+
+// loopReach is how far the outermost of n self-loops reaches from its node.
+func loopReach(n int) float64 {
+	return loopOut + float64(max(n-1, 0))*loopStep
+}
 
 // selfLoop returns a small rectangular loop on the trailing cross side of a
 // node: the right in TD/BT, the bottom in LR/RL. That side never faces
-// another rank, so the loop stays clear of the node's other edges.
-func selfLoop(ln *lnode, vertical bool, dir domain.Direction, totalPrimary float64) []domain.Point {
+// another rank, so the loop stays clear of the node's other edges. Loop k
+// nests outside loops 0..k-1, reaching further and attaching wider apart.
+func selfLoop(ln *lnode, k int, vertical bool, dir domain.Direction, totalPrimary float64) []domain.Point {
 	c := ln.center(dir, totalPrimary)
+	out := loopReach(k + 1)
+	spread := func(size float64) float64 {
+		return math.Min(size/4+float64(k)*loopStep/2, size/2)
+	}
 	if !vertical {
 		by := c.Y + ln.h/2
-		qx := ln.w / 4
+		qx := spread(ln.w)
 		return []domain.Point{
 			{X: c.X - qx, Y: by},
-			{X: c.X - qx, Y: by + loopOut},
-			{X: c.X + qx, Y: by + loopOut},
+			{X: c.X - qx, Y: by + out},
+			{X: c.X + qx, Y: by + out},
 			{X: c.X + qx, Y: by},
 		}
 	}
 	rx := c.X + ln.w/2
-	qy := ln.h / 4
+	qy := spread(ln.h)
 	return []domain.Point{
 		{X: rx, Y: c.Y - qy},
-		{X: rx + loopOut, Y: c.Y - qy},
-		{X: rx + loopOut, Y: c.Y + qy},
+		{X: rx + out, Y: c.Y - qy},
+		{X: rx + out, Y: c.Y + qy},
 		{X: rx, Y: c.Y + qy},
 	}
 }

@@ -21,9 +21,12 @@ type lnode struct {
 	// label is the edge whose label this dummy holds; its w, h are the label
 	// box, so positioning reserves room for the text like any other node.
 	label *domain.Edge
-	// loop is the label box of a self-loop on this node, zero if it has none.
-	// Positioning keeps room for the loop and its label beside the node.
-	loop domain.Size
+	// loops counts the node's self-loops, which nest one inside the next.
+	// loop bounds their labels, stacked in a column beside the outermost
+	// loop: the widest label by the sum of their heights. Positioning keeps
+	// room for both.
+	loops int
+	loop  domain.Size
 }
 
 // lgraph is the layered working graph: nodes bucketed by rank, with up/down
@@ -33,6 +36,8 @@ type lgraph struct {
 	ups    map[*lnode][]*lnode // neighbors one rank up
 	downs  map[*lnode][]*lnode // neighbors one rank down
 	chains map[*domain.Edge][]*lnode
+	// loopIdx is a self-loop's nesting depth on its node, 0 for the innermost.
+	loopIdx map[*domain.Edge]int
 
 	// cluster maps a node to the subgraph it belongs to, empty when it is
 	// outside every subgraph. Ordering keeps a cluster's members together.
@@ -57,6 +62,7 @@ func buildLGraph(g *domain.Graph, ranks map[string]int, opts Options) *lgraph {
 		ups:     map[*lnode][]*lnode{},
 		downs:   map[*lnode][]*lnode{},
 		chains:  map[*domain.Edge][]*lnode{},
+		loopIdx: map[*domain.Edge]int{},
 		cluster: map[*lnode]string{},
 	}
 
@@ -88,10 +94,14 @@ func buildLGraph(g *domain.Graph, ranks map[string]int, opts Options) *lgraph {
 		if from == nil || to == nil {
 			continue
 		}
-		if e.From == e.To && e.Label != "" {
-			sz := labelSize(e.Label, opts.face(), opts.FontSize)
-			from.loop.W = math.Max(from.loop.W, sz.W)
-			from.loop.H = math.Max(from.loop.H, sz.H)
+		if e.From == e.To {
+			lg.loopIdx[e] = from.loops
+			from.loops++
+			if e.Label != "" {
+				sz := labelSize(e.Label, opts.face(), opts.FontSize)
+				from.loop.W = math.Max(from.loop.W, sz.W)
+				from.loop.H += sz.H
+			}
 		}
 		chain := []*lnode{from}
 		if to.rank > from.rank+1 {

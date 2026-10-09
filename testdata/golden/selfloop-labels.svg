@@ -7,17 +7,17 @@
     <path d="M98.35,102.5 L122.35,102.5 L122.35,123.5 L98.35,123.5" fill="none" stroke="#333333" stroke-width="1.5" marker-end="url(#arrow)"/>
     <rect x="126.35" y="104" width="102.47" height="18" fill="#ffffff"/>
     <text x="177.59" y="118" fill="#333333" text-anchor="middle" dy="-2">retry until ready</text>
-    <path d="M49.18,134 L49.18,168 L49.18,189.5 L37.06,189.5 L37.06,202" fill="none" stroke="#333333" stroke-width="1.5" marker-end="url(#arrow)"/>
-    <rect x="30.61" y="159" width="37.14" height="18" fill="#ffffff"/>
-    <text x="49.18" y="173" fill="#333333" text-anchor="middle" dy="-2">done</text>
-    <path d="M312.06,134 L312.06,151 L118.24,151 L118.24,168 L118.24,185 L61.29,185 L61.29,202" fill="none" stroke="#333333" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <path d="M49.18,134 L49.18,146.5 L146.08,146.5 L146.08,168 L146.08,189.5 L168.5,189.5 L168.5,202" fill="none" stroke="#333333" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <rect x="127.51" y="159" width="37.14" height="18" fill="#ffffff"/>
+    <text x="146.08" y="173" fill="#333333" text-anchor="middle" dy="-2">done</text>
+    <path d="M312.06,134 L312.06,151 L215.15,151 L215.15,168 L215.15,185 L192.73,185 L192.73,202" fill="none" stroke="#333333" stroke-width="1.5" marker-end="url(#arrow)"/>
     <rect x="144.66" y="0" width="71.91" height="42" fill="#ECECFF" stroke="#9370DB"/>
     <text fill="#333333" text-anchor="middle"><tspan x="180.62" y="25.9">route</tspan></text>
     <rect x="0" y="92" width="98.35" height="42" fill="#ECECFF" stroke="#9370DB"/>
     <text fill="#333333" text-anchor="middle"><tspan x="49.18" y="117.9">retry step</tspan></text>
     <rect x="278.83" y="92" width="66.46" height="42" fill="#ECECFF" stroke="#9370DB"/>
     <text fill="#333333" text-anchor="middle"><tspan x="312.06" y="117.9">next</tspan></text>
-    <rect x="12.84" y="202" width="72.68" height="42" fill="#ECECFF" stroke="#9370DB"/>
-    <text fill="#333333" text-anchor="middle"><tspan x="49.18" y="227.9">finish</tspan></text>
+    <rect x="144.28" y="202" width="72.68" height="42" fill="#ECECFF" stroke="#9370DB"/>
+    <text fill="#333333" text-anchor="middle"><tspan x="180.62" y="227.9">finish</tspan></text>
   </g>
 </svg>

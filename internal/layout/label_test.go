@@ -120,7 +120,12 @@ func TestLabelPlacement(t *testing.T) {
 		{"LR labelled self-loop with a neighbour below", "flowchart LR\nR --> A\nR --> B\nA -->|a rather long loop label| A"},
 		{"opposite labelled parallel edges", "flowchart TD\nA -->|request| B\nB -->|response| A"},
 		{"long labelled edge", "flowchart TD\nA --> B --> C --> D\nA -->|skip ahead| D"},
-		{"BT and RL labels", "flowchart BT\nA -->|up one| B\nA -->|up two| C"},
+		{"BT labels", "flowchart BT\nA -->|up one| B\nA -->|up two| C"},
+		{"RL labels", "flowchart RL\nA -->|left one| B\nA -->|left two| C"},
+		{"labels inside a subgraph", "flowchart TD\nsubgraph S\nA -->|a very long label indeed| B\nend\nB -->|out| C"},
+		{"mixed labelled and unlabelled parallels", "flowchart TD\nA -->|one| B\nA --> B\nB -->|back| A"},
+		{"TD node with two labelled self-loops", "flowchart TD\nA -->|loop label that is long| A\nA -->|loop again| A\nA --> B"},
+		{"LR node with two labelled self-loops", "flowchart LR\nA -->|loop label that is long| A\nA -->|loop again| A\nA --> B"},
 	}
 	for _, tc := range cases {
 		Convey("Given "+tc.name, t, func() {
@@ -148,6 +153,15 @@ func TestLabelPlacement(t *testing.T) {
 					}
 				})
 
+				Convey("Then no path repeats a point", func() {
+					So(err, ShouldBeNil)
+					for _, e := range g.Edges {
+						for i := 1; i < len(e.Points); i++ {
+							So(e.Points[i], ShouldNotResemble, e.Points[i-1])
+						}
+					}
+				})
+
 				Convey("Then every non-loop label is centred on its own edge", func() {
 					So(err, ShouldBeNil)
 					for _, e := range g.Edges {
@@ -155,6 +169,28 @@ func TestLabelPlacement(t *testing.T) {
 							continue
 						}
 						So(onPolyline(labelCentre(e), e.Points), ShouldBeTrue)
+					}
+				})
+			})
+		})
+	}
+}
+
+func TestOppositeLabelledEdgesStayAligned(t *testing.T) {
+	for _, dir := range []string{"TD", "LR"} {
+		Convey("Given two "+dir+" nodes joined both ways by labelled edges", t, func() {
+			g := graphFrom("flowchart " + dir + "\nA -->|request| B\nB -->|response| A")
+
+			Convey("When computing the layout", func() {
+				_, err := Compute(g, opts)
+
+				Convey("Then the two nodes line up across the gap", func() {
+					So(err, ShouldBeNil)
+					a, b := g.NodeByID("A").Center(), g.NodeByID("B").Center()
+					if dir == "TD" {
+						So(a.X, ShouldAlmostEqual, b.X, 0.01)
+					} else {
+						So(a.Y, ShouldAlmostEqual, b.Y, 0.01)
 					}
 				})
 			})
@@ -175,6 +211,32 @@ func TestLongLabelledEdgeUsesMiddleRank(t *testing.T) {
 				y := labelCentre(g.Edges[3]).Y
 				So(y, ShouldBeGreaterThan, b.Pos.Y+b.Size.H)
 				So(y, ShouldBeLessThan, c.Pos.Y)
+			})
+		})
+	})
+}
+
+func TestNestedSelfLoops(t *testing.T) {
+	Convey("Given a node with two self-loops", t, func() {
+		g := graphFrom("flowchart TD\nA -->|first| A\nA -->|second| A")
+
+		Convey("When computing the layout", func() {
+			_, err := Compute(g, opts)
+
+			Convey("Then the second loop wraps around the first", func() {
+				So(err, ShouldBeNil)
+				inner, outer := g.Edges[0].Points, g.Edges[1].Points
+				So(outer[1].X, ShouldBeGreaterThan, inner[1].X)
+				So(outer[1].Y, ShouldBeLessThan, inner[1].Y)
+				So(outer[2].Y, ShouldBeGreaterThan, inner[2].Y)
+			})
+
+			Convey("Then both labels sit outside the outer loop", func() {
+				So(err, ShouldBeNil)
+				for _, e := range g.Edges {
+					r, _ := labelRect(e, opts.face(), opts.FontSize)
+					So(r.Min.X, ShouldBeGreaterThan, g.Edges[1].Points[1].X)
+				}
 			})
 		})
 	})
@@ -292,6 +354,35 @@ func TestShiftPortKeepsInteriorPoints(t *testing.T) {
 			Convey("Then the jog sits halfway to the label's edge, not its centre", func() {
 				So(e.Points[1], ShouldResemble, domain.Point{X: 30, Y: 15})
 				So(e.Points[2], ShouldResemble, domain.Point{X: 50, Y: 15})
+			})
+		})
+	})
+
+	Convey("Given an edge that runs straight through its label into its target", t, func() {
+		e := &domain.Edge{
+			Points:   []domain.Point{{X: 50, Y: 0}, {X: 50, Y: 40}, {X: 50, Y: 80}},
+			LabelPos: domain.Point{X: 50, Y: 40},
+		}
+
+		Convey("When its end moves along the face", func() {
+			shiftPort(e, true, 70, true, 10)
+
+			Convey("Then the jog sits halfway between the label's edge and the end", func() {
+				So(e.Points[2], ShouldResemble, domain.Point{X: 50, Y: 65})
+				So(e.Points[3], ShouldResemble, domain.Point{X: 70, Y: 65})
+			})
+		})
+	})
+
+	Convey("Given an end that already sits at its port", t, func() {
+		pts := []domain.Point{{X: 50, Y: 0}, {X: 50, Y: 40}, {X: 50, Y: 80}}
+		e := &domain.Edge{Points: slices.Clone(pts)}
+
+		Convey("When it is moved to the same port", func() {
+			shiftPort(e, false, 50, true, 0)
+
+			Convey("Then the path is unchanged", func() {
+				So(e.Points, ShouldResemble, pts)
 			})
 		})
 	})
