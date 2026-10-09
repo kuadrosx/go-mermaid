@@ -28,6 +28,7 @@ func FuzzRender(f *testing.F) {
 		"graph TD\nA[[x]] --> B[(y)] --> C{{z}}\nA:::cls\nclassDef cls fill:#f00",
 		"graph TD\nsubgraph one\nA-->B\nend",
 		"flowchart LR\nA -- \"quoted (label)\" --> B\nC -. \"open --> D",
+		"flowchart LR\nA x--o B\nC <-.-> D\nx --x o\nE o==\nF --- G --> H",
 		"sequenceDiagram\nautonumber\nloop x\nA->>B: hi\nend",
 		"",
 		"graph",

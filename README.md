@@ -197,6 +197,7 @@ Rendering is fast — roughly 10–50µs per diagram with no external processes.
 | Parallelogram | `A[/Label/]`, `A[\Label\]` |
 | Trapezoid | `A[/Label\]`, `A[\Label/]` |
 | Arrow / open / dotted / thick | `A --> B`, `A --- B`, `A -.-> B`, `A ==> B` |
+| Cross / circle / both ends | `A --x B`, `A --o B`, `A x--x B`, `A <--> B` |
 | Edge label | `A -->\|text\| B`, `A -- text --> B`, `A -- "text (quoted)" --> B` |
 | Subgraph | `subgraph T` … `end`, `subgraph "Two words"` |
 | Styling | `classDef`, `class`, `style`, `A:::cls` |
